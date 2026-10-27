@@ -46,6 +46,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetailResponse'
+        "404":
+          description: No agent found for the request (AGENT_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+        "502":
+          description: AI runtime returned an error or an invalid response (RUNTIME_ERROR, RUNTIME_INVALID_RESPONSE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+        "503":
+          description: AI runtime unavailable, retryable (RUNTIME_UNAVAILABLE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+        "504":
+          description: AI runtime timed out, retryable (RUNTIME_TIMEOUT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
 
   /agents:
     post:

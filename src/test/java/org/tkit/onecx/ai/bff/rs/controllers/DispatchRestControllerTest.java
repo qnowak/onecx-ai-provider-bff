@@ -178,7 +178,7 @@ class DispatchRestControllerTest extends AbstractTest {
     }
 
     @Test
-    void chatTest_500_returns400() {
+    void chatTest_500_forwardsStatus() {
         var message = new ChatMessageDTO();
         message.setConversationId("conversation-1");
         message.setType(ChatMessageDTO.TypeEnum.USER);
@@ -195,7 +195,7 @@ class DispatchRestControllerTest extends AbstractTest {
                 .respond(response()
                         .withStatusCode(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode()));
 
-        // ExceptionMapper converts 500 from SVC to 400 for BFF clients
+        // SVC status is forwarded unchanged for dispatch
         given()
                 .when()
                 .auth().oauth2(keycloakTestClient.getAccessToken(ADMIN))
@@ -204,7 +204,82 @@ class DispatchRestControllerTest extends AbstractTest {
                 .body(request)
                 .post()
                 .then()
-                .statusCode(Response.Status.BAD_REQUEST.getStatusCode());
+                .statusCode(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());
+    }
+
+    @Test
+    void chatTest_svcProblem_404_forwardsErrorCode() {
+        assertSvcProblemForwarded(Response.Status.NOT_FOUND, "AGENT_NOT_FOUND", "Agent not found");
+    }
+
+    @Test
+    void chatTest_svcProblem_502_forwardsErrorCode() {
+        assertSvcProblemForwarded(Response.Status.BAD_GATEWAY, "RUNTIME_ERROR", "AI runtime returned an error");
+    }
+
+    @Test
+    void chatTest_svcNonJson_503_forwardsStatusOnly() {
+        mockServerClient.when(
+                request().withPath("/internal/dispatch/chat")
+                        .withMethod(HttpMethod.POST))
+                .withPriority(100)
+                .withId(MOCK_ID)
+                .respond(response()
+                        .withStatusCode(Response.Status.SERVICE_UNAVAILABLE.getStatusCode())
+                        .withContentType(MediaType.TEXT_PLAIN)
+                        .withBody("upstream down"));
+
+        given()
+                .when()
+                .auth().oauth2(keycloakTestClient.getAccessToken(ADMIN))
+                .header(APM_HEADER_PARAM, ADMIN)
+                .contentType(APPLICATION_JSON)
+                .body(chatRequest())
+                .post()
+                .then()
+                .statusCode(Response.Status.SERVICE_UNAVAILABLE.getStatusCode());
+    }
+
+    private void assertSvcProblemForwarded(Response.Status status, String errorCode, String detail) {
+        var problem = new ProblemDetailResponseInternal()
+                .errorCode(errorCode)
+                .detail(detail);
+
+        mockServerClient.when(
+                request().withPath("/internal/dispatch/chat")
+                        .withMethod(HttpMethod.POST))
+                .withPriority(100)
+                .withId(MOCK_ID)
+                .respond(response()
+                        .withStatusCode(status.getStatusCode())
+                        .withContentType(MediaType.APPLICATION_JSON)
+                        .withBody(JsonBody.json(problem)));
+
+        var response = given()
+                .when()
+                .auth().oauth2(keycloakTestClient.getAccessToken(ADMIN))
+                .header(APM_HEADER_PARAM, ADMIN)
+                .contentType(APPLICATION_JSON)
+                .body(chatRequest())
+                .post()
+                .then()
+                .statusCode(status.getStatusCode())
+                .extract()
+                .as(ProblemDetailResponseDTO.class);
+
+        Assertions.assertEquals(errorCode, response.getErrorCode());
+        Assertions.assertEquals(detail, response.getDetail());
+    }
+
+    private static ChatRequestDTO chatRequest() {
+        var message = new ChatMessageDTO();
+        message.setConversationId("conversation-1");
+        message.setType(ChatMessageDTO.TypeEnum.USER);
+        message.setMessage("hello");
+
+        var request = new ChatRequestDTO();
+        request.setChatMessage(message);
+        return request;
     }
 
     @Test
